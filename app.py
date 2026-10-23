@@ -144,18 +144,21 @@ default_calc = [
         "Loan Name": "LOC",
         "Loan Total ($)": 127000.0,
         "Interest Rate (%)": 5.89,
+        "Payment Type": "INT ONLY",
         "Term (Years)": 25,
     },
     {
         "Loan Name": "GREEN LOAN",
         "Loan Total ($)": 28600.0,
         "Interest Rate (%)": 1.00,
+        "Payment Type": "P&I",
         "Term (Years)": 25,
     },
     {
         "Loan Name": "RECLADDING LOAN",
         "Loan Total ($)": 120000.0,
         "Interest Rate (%)": 5.89,
+        "Payment Type": "P&I",
         "Term (Years)": 25,
     },
 ]
@@ -172,6 +175,12 @@ edited_calc_df = st.data_editor(
         "Interest Rate (%)": st.column_config.NumberColumn(
             "Interest Rate (%)", min_value=0.0, format="%.2f%%"
         ),
+        "Payment Type": st.column_config.SelectboxColumn(
+            "Payment Type",
+            options=["P&I", "INT ONLY"],
+            required=True,
+            help="Select Principal & Interest or Interest-Only payment mode.",
+        ),
         "Term (Years)": st.column_config.NumberColumn(
             "Term (Years)", min_value=1, max_value=40, format="%d yrs"
         ),
@@ -183,39 +192,55 @@ calc_results = []
 for _, row in edited_calc_df.iterrows():
   p = row["Loan Total ($)"]
   annual_r = row["Interest Rate (%)"] / 100.0
+  pay_type = row.get("Payment Type", "P&I")
   years = int(row["Term (Years)"])
 
   monthly_payment = 0.0
   total_interest = 0.0
   total_paid = 0.0
 
-  if p > 0 and years > 0:
-    if annual_r == 0:
-      monthly_payment = p / (years * 12)
+  if p > 0:
+    if pay_type == "INT ONLY":
+      monthly_payment = (p * annual_r) / 12.0
+      total_interest = 0.0
+      total_paid = p
     else:
-      i = annual_r / 12.0
-      n = years * 12
-      monthly_payment = p * (i * (1 + i) ** n) / ((1 + i) ** n - 1)
+      if years > 0:
+        if annual_r == 0:
+          monthly_payment = p / (years * 12)
+        else:
+          i = annual_r / 12.0
+          n = years * 12
+          monthly_payment = p * (i * (1 + i) ** n) / ((1 + i) ** n - 1)
 
-    total_paid = monthly_payment * (years * 12)
-    total_interest = total_paid - p
+        total_paid = monthly_payment * (years * 12)
+        total_interest = total_paid - p
 
   calc_results.append({
       "Loan Name": row["Loan Name"],
       "Loan Total ($)": round(p, 2),
       "Interest Rate (%)": round(row["Interest Rate (%)"], 2),
-      "Term (Years)": years,
+      "Payment Type": pay_type,
+      "Term (Years)": "-" if pay_type == "INT ONLY" else years,
       "Calculated Monthly Payment ($)": round(monthly_payment, 2),
-      "Total Interest ($)": round(total_interest, 2),
-      "Total Cost ($)": round(total_paid, 2),
+      "Total Interest ($)": 0.0 if pay_type == "INT ONLY" else round(total_interest, 2),
+      "Total Cost ($)": round(p if pay_type == "INT ONLY" else total_paid, 2),
   })
 
 df_results = pd.DataFrame(calc_results)
 st.dataframe(df_results, use_container_width=True)
 
 if not df_results.empty:
+  total_combined_principal = df_results["Loan Total ($)"].sum()
   total_combined_interest = df_results["Total Interest ($)"].sum()
-  st.metric(
+
+  col_sum1, col_sum2 = st.columns(2)
+  col_sum1.metric(
+      label="Total Loan Principal Value",
+      value=f"${total_combined_principal:,.2f}",
+      help="Sum of loan balances/totals listed in the calculator table.",
+  )
+  col_sum2.metric(
       label="Total Combined Traditional Interest",
       value=f"${total_combined_interest:,.2f}",
       help="Sum of total interest across all amortized loans listed above.",
@@ -246,7 +271,6 @@ def run_velocity_simulation(
     buffer,
     strategy,
 ):
-  # Perform a deep copy to ensure isolated evaluation per strategy
   debts = copy.deepcopy(debts_input)
   for d in debts:
     d["rate"] = d["rate"] / 100.0
@@ -361,7 +385,6 @@ if st.button("🚀 Run Payoff Simulation", type="primary"):
     summary_data = []
 
     for strat in strategies_to_test:
-      # Deep copy ensures clean state per strategy loop
       res_df = run_velocity_simulation(
           copy.deepcopy(debts_list),
           monthly_income,
@@ -467,9 +490,6 @@ if st.button("🚀 Run Payoff Simulation", type="primary"):
       with st.expander("🔍 View Month-by-Month Amortization Schedule"):
         st.dataframe(results_df, use_container_width=True)
 
-      # ==========================================
-      # BOTTOM ANALYTICAL SUMMARY & RECOMMENDATION
-      # ==========================================
       st.markdown("---")
       st.subheader("💡 Strategic Debt Payoff Analysis")
       st.info("""
