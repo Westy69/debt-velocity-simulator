@@ -114,11 +114,10 @@ edited_df = st.data_editor(
         "min_pay": st.column_config.NumberColumn(
             "Minimum Payment ($)", min_value=0.0, format="$%.2f"
         ),
-        "fixed_lock_months": st.column_config.NumberColumn(
+        "fixed_lock_months": st.column_config.SelectboxColumn(
             "Fixed Lock (Months)",
-            min_value=0,
-            max_value=360,
-            format="%d mos",
+            options=[0, 12, 24, 36, 48, 60],
+            required=True,
             help=(
                 "Number of months before lump-sum payoff is allowed without"
                 " penalty."
